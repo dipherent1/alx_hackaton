@@ -28,7 +28,7 @@ class Configuration:
     def __init__(self) -> None:
         """Initialize configuration with environment variables."""
         self.settings = get_settings()
-        
+
     @staticmethod
     def load_env() -> None:
         """Load environment variables from .env file."""
@@ -129,7 +129,7 @@ class Server:
                     # logging.info(f"Server: {self.name}, Tool: {tool.name}, Description: {tool.description}")
                     tools.append(Tool(tool.name, tool.description, tool.inputSchema))
         return tools
-    
+
     async def execute_tool(
         self,
         tool_name: str,
@@ -229,11 +229,12 @@ class LLMClient:
         self.endpoint = settings.endpoint
         self.model_name = settings.model_name
 
-    def get_response(self, messages: list[dict[str, str]]) -> str:
+    def get_response(self, messages: list[dict[str, str]], stream_to_console: bool = False) -> str:
         """Get a response from the LLM.
 
         Args:
             messages: A list of message dictionaries.
+            stream_to_console: Whether to print the response to console as it streams.
 
         Returns:
             The LLM's response as a string.
@@ -254,16 +255,25 @@ class LLMClient:
         )
 
         usage = None
+        content_chunks = []
+
         for update in response:
             if update.choices and update.choices[0].delta:
-                print(update.choices[0].delta.content or "", end="")
+                chunk = update.choices[0].delta.content or ""
+                content_chunks.append(chunk)
+                if stream_to_console:
+                    print(chunk, end="")
             if update.usage:
                 usage = update.usage
 
-        if usage:
+        full_content = "".join(content_chunks)
+
+        if usage and stream_to_console:
             print("\n")
             for k, v in usage.dict().items():
                 print(f"{k} = {v}")
+
+        return full_content
 
 
 class ChatSession:
@@ -272,6 +282,8 @@ class ChatSession:
     def __init__(self, servers: list[Server], llm_client: LLMClient) -> None:
         self.servers: list[Server] = servers
         self.llm_client: LLMClient = llm_client
+        self.messages: list[dict[str, str]] = []
+        self.initialized: bool = False
 
     async def cleanup_servers(self) -> None:
         """Clean up all servers properly."""
@@ -331,18 +343,26 @@ class ChatSession:
         except json.JSONDecodeError:
             return llm_response
 
-    async def start(self) -> None:
-        """Main chat session handler."""
-        # logging.info("Starting chat session...")
-        try:
+    async def initialize(self, with_tools: bool = True) -> None:
+        """Initialize the chat session and servers.
+
+        Args:
+            with_tools: Whether to initialize with tools or use a basic assistant.
+        """
+        if self.initialized:
+            return
+
+        if with_tools and self.servers:
+            # Initialize servers
             for server in self.servers:
                 try:
                     await server.initialize()
                 except Exception as e:
                     # logging.error(f"Failed to initialize server: {e}")
                     await self.cleanup_servers()
-                    return
+                    raise RuntimeError(f"Failed to initialize server: {str(e)}")
 
+            # Get tools from all servers
             all_tools = []
             for server in self.servers:
                 tools = await server.list_tools()
@@ -350,6 +370,7 @@ class ChatSession:
 
             tools_description = "\n".join([tool.format_for_llm() for tool in all_tools])
 
+            # Create system message with tools description
             system_message = (
                 "You are a helpful assistant with access to these tools:\n\n"
                 f"{tools_description}\n"
@@ -371,37 +392,71 @@ class ChatSession:
                 "5. Avoid simply repeating the raw data\n\n"
                 "Please use only the tools that are explicitly defined above."
             )
+        else:
+            # Create a simple system message without tools
+            system_message = (
+                "You are a helpful assistant. Please respond to the user's questions "
+                "in a clear, concise, and informative manner. If you don't know the answer "
+                "to a question, please say so rather than making up information."
+            )
 
-            messages = [{"role": "system", "content": system_message}]
+        self.messages = [{"role": "system", "content": system_message}]
+        self.initialized = True
+
+    async def process_message(self, user_message: str, stream_to_console: bool = False) -> str:
+        """Process a single user message and return the response.
+
+        Args:
+            user_message: The user's message.
+            stream_to_console: Whether to print the response to console as it streams.
+
+        Returns:
+            The assistant's final response.
+        """
+        if not self.initialized:
+            await self.initialize()
+
+        # Add user message to conversation history
+        self.messages.append({"role": "user", "content": user_message})
+
+        # Get response from LLM
+        llm_response = self.llm_client.get_response(self.messages, stream_to_console)
+
+        # Process response (check for tool calls)
+        result = await self.process_llm_response(llm_response)
+
+        final_response = llm_response
+
+        # If tool was called, get final response with tool result
+        if result != llm_response:
+            self.messages.append({"role": "assistant", "content": llm_response})
+            self.messages.append({"role": "system", "content": result})
+
+            final_response = self.llm_client.get_response(self.messages, stream_to_console)
+            self.messages.append({"role": "assistant", "content": final_response})
+        else:
+            self.messages.append({"role": "assistant", "content": llm_response})
+
+        return final_response
+
+    async def start(self) -> None:
+        """Main chat session handler for interactive mode."""
+        # logging.info("Starting chat session...")
+        try:
+            await self.initialize()
 
             while True:
                 try:
-                    user_input = input("You: ").strip().lower()
-                    if user_input in ["quit", "exit"]:
+                    user_input = input("You: ").strip()
+                    if user_input.lower() in ["quit", "exit"]:
                         # logging.info("\nExiting...")
                         break
 
-                    messages.append({"role": "user", "content": user_input})
+                    response = await self.process_message(user_input, stream_to_console=True)
 
-                    llm_response = self.llm_client.get_response(messages)
-                    # print(f"Assistant: {llm_response}")
-                    # logging.info("\nAssistant: %s", llm_response)
-
-                    result = await self.process_llm_response(llm_response)
-
-                    if result != llm_response:
-                        messages.append({"role": "assistant", "content": llm_response})
-                        messages.append({"role": "system", "content": result})
-
-                        final_response = self.llm_client.get_response(messages)
-                        # logging.info("\nFinal response: %s", final_response)
-                        messages.append(
-                            {"role": "assistant", "content": final_response}
-                        )
-                    else:
-                        messages.append({"role": "assistant", "content": llm_response})
-                    
-                    print(llm_response)
+                    # Response is already printed if stream_to_console=True
+                    # If we didn't stream, print the response now
+                    # print(f"\nAssistant: {response}")
 
                 except KeyboardInterrupt:
                     # logging.info("\nExiting...")
@@ -411,16 +466,86 @@ class ChatSession:
             await self.cleanup_servers()
 
 
+# Store a global chat session to maintain conversation state
+_chat_session = None
+
+async def initialize_chat_session(use_tools: bool = True):
+    """Initialize the chat session with all tools and servers.
+
+    Args:
+        use_tools: Whether to try to initialize servers and tools.
+
+    Returns:
+        A fully initialized ChatSession object.
+    """
+    global _chat_session
+
+    if _chat_session is not None:
+        return _chat_session
+
+    try:
+        config = Configuration()
+        llm_client = LLMClient(config.settings)
+
+        if use_tools:
+            try:
+                config_path = os.path.join(os.path.dirname(__file__), "servers_config.json")
+                server_config = config.load_config(config_path)
+                servers = [
+                    Server(name, srv_config)
+                    for name, srv_config in server_config["mcpServers"].items()
+                ]
+                _chat_session = ChatSession(servers, llm_client)
+
+                # Initialize the session with tools
+                await _chat_session.initialize()
+                print("Chat session initialized with tools.")
+            except Exception as e:
+                print(f"Warning: Could not initialize tools: {e}")
+                print("Falling back to basic chat without tools.")
+                _chat_session = ChatSession([], llm_client)
+                await _chat_session.initialize(with_tools=False)
+        else:
+            # Create a session without tools
+            _chat_session = ChatSession([], llm_client)
+            await _chat_session.initialize(with_tools=False)
+            print("Chat session initialized without tools.")
+
+        return _chat_session
+    except Exception as e:
+        print(f"Error initializing chat session: {e}")
+        raise
+
+async def get_response(message: str, stream_to_console: bool = False) -> str:
+    """Get a response for a single message using the full ChatSession with tools.
+
+    This function is designed to be called from external code like a web API.
+    It maintains conversation history between calls.
+
+    Args:
+        message: The user's message.
+        stream_to_console: Whether to print the response to console as it streams.
+
+    Returns:
+        The assistant's final response.
+    """
+    try:
+        # Get or initialize the chat session
+        chat_session = await initialize_chat_session()
+
+        # Process the message and get a response
+        response = await chat_session.process_message(message, stream_to_console)
+        return response
+
+    except Exception as e:
+        error_msg = f"I'm sorry, I encountered an error while processing your request: {str(e)}"
+        print(error_msg)
+        return error_msg
+
+
 async def main() -> None:
-    """Initialize and run the chat session."""
-    config = Configuration()
-    server_config = config.load_config("/home/biniam/Desktop/Projects/alx_hackathon/alx_hackaton/app/AI/servers_config.json")
-    servers = [
-        Server(name, srv_config)
-        for name, srv_config in server_config["mcpServers"].items()
-    ]
-    llm_client = LLMClient(config.settings)
-    chat_session = ChatSession(servers, llm_client)
+    """Initialize and run the chat session in interactive mode."""
+    chat_session = await initialize_chat_session()
     await chat_session.start()
 
 

@@ -1,12 +1,5 @@
 {
-    "mcpServers": {
-      
-      "galaxyTools": {
-        "command": "",
-        "args": [""],
-        "env": {}
-      }
-      
+    "mcpServers": {    
     
     }
   }
