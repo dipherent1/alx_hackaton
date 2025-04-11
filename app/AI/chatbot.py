@@ -5,7 +5,7 @@ import os
 import shutil
 from contextlib import AsyncExitStack
 from typing import Any
-from config.env import get_settings
+from config import get_settings
 import httpx
 from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
