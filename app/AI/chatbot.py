@@ -5,7 +5,7 @@ import os
 import shutil
 from contextlib import AsyncExitStack
 from typing import Any
-from config import get_settings
+from app.config.env import get_settings
 import httpx
 from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
@@ -414,7 +414,7 @@ class ChatSession:
 async def main() -> None:
     """Initialize and run the chat session."""
     config = Configuration()
-    server_config = config.load_config("servers_config.json")
+    server_config = config.load_config("/home/biniam/Desktop/Projects/alx_hackathon/alx_hackaton/app/AI/servers_config.json")
     servers = [
         Server(name, srv_config)
         for name, srv_config in server_config["mcpServers"].items()
