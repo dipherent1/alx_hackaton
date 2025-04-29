@@ -1,11 +1,13 @@
 import asyncio
 import json
 import logging
+from app.core.database import get_db
+from app.repo.room_repo import RoomRepository
 import os
 import shutil
 from contextlib import AsyncExitStack
 from typing import Any
-from app.config.env import get_settings
+from app.core.config import settings
 import httpx
 from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
@@ -21,13 +23,16 @@ from openai import OpenAI
 #     ]
 # )
 
+_SETTINGS = None
 
 class Configuration:
     """Manages configuration and environment variables for the MCP client."""
 
     def __init__(self) -> None:
         """Initialize configuration with environment variables."""
-        self.settings = get_settings()
+        global _SETTINGS
+        _SETTINGS = settings
+        self.settings = settings
 
     @staticmethod
     def load_env() -> None:
@@ -109,6 +114,7 @@ class Server:
             # logging.error(f"Error initializing server {self.name}: {e}")
             await self.cleanup()
             raise
+
 
     async def list_tools(self) -> list[Any]:
         if not self.session:
@@ -225,16 +231,15 @@ class LLMClient:
     """Manages communication with the LLM provider."""
 
     def __init__(self, settings) -> None:
-        self.token = settings.token
-        self.endpoint = settings.endpoint
-        self.model_name = settings.model_name
+        self.token = settings.TOKEN
+        self.endpoint = settings.ENDPOINT
+        self.model_name = settings.MODEL_NAME
 
-    def get_response(self, messages: list[dict[str, str]], stream_to_console: bool = False) -> str:
+    def get_response(self, messages: list[dict[str, str]]) -> str:
         """Get a response from the LLM.
 
         Args:
             messages: A list of message dictionaries.
-            stream_to_console: Whether to print the response to console as it streams.
 
         Returns:
             The LLM's response as a string.
@@ -261,17 +266,15 @@ class LLMClient:
             if update.choices and update.choices[0].delta:
                 chunk = update.choices[0].delta.content or ""
                 content_chunks.append(chunk)
-                if stream_to_console:
-                    print(chunk, end="")
-            if update.usage:
-                usage = update.usage
+            # if update.usage:
+            #     usage = update.usage
 
         full_content = "".join(content_chunks)
 
-        if usage and stream_to_console:
-            print("\n")
-            for k, v in usage.dict().items():
-                print(f"{k} = {v}")
+        # if usage:
+        #     print("\n")
+        #     for k, v in usage.dict().items():
+        #         print(f"{k} = {v}")
 
         return full_content
 
@@ -370,27 +373,103 @@ class ChatSession:
 
             tools_description = "\n".join([tool.format_for_llm() for tool in all_tools])
 
+            repo = RoomRepository()
+            rooms = repo.get_all_rooms(get_db())
+            rooms_str = ", ".join(
+                [
+                    (
+                        f"Room {room.room_number} on floor {room.floor}, "
+                        f"{'available' if room.is_available else 'not available'}, "
+                        f"Type: {room.room_type.name if room.room_type and hasattr(room.room_type, 'name') else 'N/A'}"
+                    )
+                    for room in rooms
+                ]
+            )
+            print(rooms_str)
+            
             # Create system message with tools description
             system_message = (
-                "You are a helpful assistant with access to these tools:\n\n"
-                f"{tools_description}\n"
-                "Choose the appropriate tool based on the user's question. "
-                "If no tool is needed, reply directly.\n\n"
-                "IMPORTANT: When you need to use a tool, you must ONLY respond with "
-                "the exact JSON object format below, nothing else:\n"
-                "{\n"
-                '    "tool": "tool-name",\n'
-                '    "arguments": {\n'
-                '        "argument-name": "value"\n'
-                "    }\n"
-                "}\n\n"
-                "After receiving a tool's response:\n"
-                "1. Transform the raw data into a natural, conversational response\n"
-                "2. Keep responses concise but informative\n"
-                "3. Focus on the most relevant information\n"
-                "4. Use appropriate context from the user's question\n"
-                "5. Avoid simply repeating the raw data\n\n"
-                "Please use only the tools that are explicitly defined above."
+                """
+
+You are a helpful assistant with access to these tools:
+
+{tools_description}
+
+Choose the appropriate tool based on the user's question. If no tool is needed, reply directly.
+
+IMPORTANT: When you need to use a tool, you must ONLY respond with the exact JSON object format below, nothing else:
+{
+    "tool": "tool-name",
+    "arguments": {
+        "argument-name": "value"
+    }
+}
+
+After receiving a tool's response:
+1. Transform the raw data into a natural, conversational response  
+2. Keep responses concise but informative  
+3. Focus on the most relevant information  
+4. Use appropriate context from the user's question  
+5. Avoid simply repeating the raw data  
+
+Please use only the tools that are explicitly defined above.
+
+---
+
+Context for Kuriftu Resort & Spa Bishoftu:
+
+Kuriftu Resort & Spa Bishoftu is a luxury lakeside destination in Bishoftu, Ethiopia, offering a blend of leisure, relaxation, and event hosting.  
+
+🏨 **Rooms & Pricing**:  
+Room rates typically range from **$100 to $150 per night**, with **lower prices in May and January**. Room types include:
+- **Lake View**: Prime sunrise/sunset views  
+- **Garden View**: Surrounded by vibrant flora and birdsong  
+- **Village**: Modern lofted interiors with abstract art  
+- **Presidential Suite**: Spacious, luxurious with in-room massage/dining  
+
+Deals as low as **$52–$104** may be available seasonally.  
+
+🚐 **Transportation**:  
+- **Airport shuttle**: $75 roundtrip (84 mins from Bole International Airport)  
+- **Area shuttle**: Available for an extra fee  
+
+🧖‍♀️ **Amenities**:  
+- **Spa**: Services include massage, aromatherapy, facials  
+- **Gym**: Steam room, sauna, jacuzzi  
+- **Bars & Restaurants**: 2 bars, 3 restaurants (local & international cuisine), daily buffet breakfast from 7:00–10:00 AM  
+
+🎉 **Check-in/out**:  
+- Check-in: from **2:00 PM to 8:00 PM**  
+- Check-out: **by 11:00 AM** (late check-out available upon request)  
+
+🌊 **Family Facilities**:  
+- **Kuriftu Water Park**: Over 30,000 sqm with slides, wave pools, circus shows, food court, and gift shop. No dedicated playground is listed, but the waterpark serves that function.  
+
+💍 **Events & Conferences**:  
+- Ideal for weddings, reunions, birthdays (up to **3,000 guests**)  
+- Halls include:  
+  - **Balambaras (120 ppl)**  
+  - **Tiruwark (20)**  
+  - **Meantwab (35)**  
+  - **Girum (40)**  
+- Catering, custom setups, and ceremonial events available  
+
+🌞 **Weather**:  
+- Warm year-round: avg **75°F in April**  
+- Range: **54°F to 80°F**,
+
+
+Prompt 1: Family Stay with Budget & Weather Inquiry
+"Hi, I’m planning a family vacation to Kuriftu Resort in Bishoftu. I have a budget of $600 and we’re looking to stay for 4 nights in May. There are 2 adults and 2 kids. Can you help me find a suitable room? Also, what’s the weather like during that time, and are there any family-friendly activities or facilities?"
+
+Prompt 2: Business Event + Room Type Inquiry
+"Hello, I’m attending a business conference at Kuriftu Resort and will be staying for 3 nights in April. I’d like a quiet room with a nice view, preferably something with a garden or lake view. My budget is about $450. What are my room options, and can you also tell me what amenities are included and how the weather will be?"
+
+Prompt 3: Luxury Stay with Event and Transportation Help
+"Hi, I'm looking to book the Presidential Suite at Kuriftu Resort for 2 nights in January for a romantic birthday celebration. It's for two people, and I’ll be flying in from Addis Ababa. I’d love some help arranging the airport shuttle. Can you also tell me about the dining options and if the resort offers anything special for events or celebrations?"
+
+"""
+                
             )
         else:
             # Create a simple system message without tools
@@ -403,12 +482,11 @@ class ChatSession:
         self.messages = [{"role": "system", "content": system_message}]
         self.initialized = True
 
-    async def process_message(self, user_message: str, stream_to_console: bool = False) -> str:
+    async def process_message(self, user_message: str) -> str:
         """Process a single user message and return the response.
 
         Args:
             user_message: The user's message.
-            stream_to_console: Whether to print the response to console as it streams.
 
         Returns:
             The assistant's final response.
@@ -420,7 +498,7 @@ class ChatSession:
         self.messages.append({"role": "user", "content": user_message})
 
         # Get response from LLM
-        llm_response = self.llm_client.get_response(self.messages, stream_to_console)
+        llm_response = self.llm_client.get_response(self.messages)
 
         # Process response (check for tool calls)
         result = await self.process_llm_response(llm_response)
@@ -432,38 +510,14 @@ class ChatSession:
             self.messages.append({"role": "assistant", "content": llm_response})
             self.messages.append({"role": "system", "content": result})
 
-            final_response = self.llm_client.get_response(self.messages, stream_to_console)
+            final_response = self.llm_client.get_response(self.messages)
             self.messages.append({"role": "assistant", "content": final_response})
         else:
             self.messages.append({"role": "assistant", "content": llm_response})
 
         return final_response
 
-    async def start(self) -> None:
-        """Main chat session handler for interactive mode."""
-        # logging.info("Starting chat session...")
-        try:
-            await self.initialize()
-
-            while True:
-                try:
-                    user_input = input("You: ").strip()
-                    if user_input.lower() in ["quit", "exit"]:
-                        # logging.info("\nExiting...")
-                        break
-
-                    response = await self.process_message(user_input, stream_to_console=True)
-
-                    # Response is already printed if stream_to_console=True
-                    # If we didn't stream, print the response now
-                    # print(f"\nAssistant: {response}")
-
-                except KeyboardInterrupt:
-                    # logging.info("\nExiting...")
-                    break
-
-        finally:
-            await self.cleanup_servers()
+    
 
 
 # Store a global chat session to maintain conversation state
@@ -480,6 +534,7 @@ async def initialize_chat_session(use_tools: bool = True):
     """
     global _chat_session
 
+    print("Initializing chat bot session...")
     if _chat_session is not None:
         return _chat_session
 
@@ -488,23 +543,19 @@ async def initialize_chat_session(use_tools: bool = True):
         llm_client = LLMClient(config.settings)
 
         if use_tools:
-            try:
-                config_path = os.path.join(os.path.dirname(__file__), "servers_config.json")
-                server_config = config.load_config(config_path)
-                servers = [
-                    Server(name, srv_config)
-                    for name, srv_config in server_config["mcpServers"].items()
-                ]
-                _chat_session = ChatSession(servers, llm_client)
+            # Get the absolute path to the current directory
+            # current_dir = os.path.dirname(os.path.abspath(__file__))
+            # config_path = os.path.join(current_dir, "servers_config.json")
+            server_config = config.load_config("app/AI/servers_config.json")
+            servers = [
+                Server(name, srv_config)
+                for name, srv_config in server_config["mcpServers"].items()
+            ]
+            _chat_session = ChatSession(servers, llm_client)
 
-                # Initialize the session with tools
-                await _chat_session.initialize()
-                print("Chat session initialized with tools.")
-            except Exception as e:
-                print(f"Warning: Could not initialize tools: {e}")
-                print("Falling back to basic chat without tools.")
-                _chat_session = ChatSession([], llm_client)
-                await _chat_session.initialize(with_tools=False)
+            # Initialize the session with tools
+            await _chat_session.initialize()
+            print("Chat session initialized with tools.")
         else:
             # Create a session without tools
             _chat_session = ChatSession([], llm_client)
@@ -516,38 +567,38 @@ async def initialize_chat_session(use_tools: bool = True):
         print(f"Error initializing chat session: {e}")
         raise
 
-async def get_response(message: str, stream_to_console: bool = False) -> str:
-    """Get a response for a single message using the full ChatSession with tools.
+# async def get_response(message: str, stream_to_console: bool = False) -> str:
+#     """Get a response for a single message using the full ChatSession with tools.
 
-    This function is designed to be called from external code like a web API.
-    It maintains conversation history between calls.
+#     This function is designed to be called from external code like a web API.
+#     It maintains conversation history between calls.
 
-    Args:
-        message: The user's message.
-        stream_to_console: Whether to print the response to console as it streams.
+#     Args:
+#         message: The user's message.
+#         stream_to_console: Whether to print the response to console as it streams.
 
-    Returns:
-        The assistant's final response.
-    """
-    try:
-        # Get or initialize the chat session
-        chat_session = await initialize_chat_session()
+#     Returns:
+#         The assistant's final response.
+#     """
+#     try:
+#         # Get or initialize the chat session
+#         chat_session = await initialize_chat_session()
 
-        # Process the message and get a response
-        response = await chat_session.process_message(message, stream_to_console)
-        return response
+#         # Process the message and get a response
+#         response = await chat_session.process_message(message, stream_to_console)
+#         return response
 
-    except Exception as e:
-        error_msg = f"I'm sorry, I encountered an error while processing your request: {str(e)}"
-        print(error_msg)
-        return error_msg
-
-
-async def main() -> None:
-    """Initialize and run the chat session in interactive mode."""
-    chat_session = await initialize_chat_session()
-    await chat_session.start()
+#     except Exception as e:
+#         error_msg = f"I'm sorry, I encountered an error while processing your request: {str(e)}"
+#         print(error_msg)
+#         return error_msg
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# async def main() -> None:
+#     """Initialize and run the chat session in interactive mode."""
+#     chat_session = await initialize_chat_session()
+#     await chat_session.start()
+
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
