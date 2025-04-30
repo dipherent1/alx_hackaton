@@ -1,0 +1,17 @@
+from app.routers.endpoints.chatRouter import chat_router
+from fastapi import APIRouter, HTTPException
+
+routerList = [
+    chat_router,
+]
+
+routers = APIRouter()
+
+for router in routerList:
+    routers.include_router(router)
+
+def getRouters():
+    """
+    Returns the list of routers.
+    """
+    return routers
