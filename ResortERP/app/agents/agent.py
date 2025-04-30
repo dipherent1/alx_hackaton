@@ -7,6 +7,8 @@ from google.adk.agents import Agent
 from google.adk.sessions import InMemorySessionService
 from google.adk.runners import Runner
 from google.genai import types # For creating message Content/Parts
+from app.config.env import get_settings
+
 
 
 def get_weather(city: str) -> dict:
@@ -61,45 +63,9 @@ def get_current_time(city: str) -> dict:
     return {"status": "success", "report": report}
 
 
-root_agent = Agent(
-    name="weather_time_agent",
-    model="gemini-2.0-flash",
-    description=(
-        "Agent to answer questions about the time and weather in a city."
-    ),
-    instruction=(
-        "You are a helpful agent who can answer user questions about the time and weather in a city."
-    ),
-    tools=[get_weather, get_current_time],
-)
-
-session_service = InMemorySessionService()
-
-# Define constants for identifying the interaction context
-APP_NAME = "weather_tutorial_app"
-USER_ID = "user_1"
-SESSION_ID = "session_001" # Using a fixed ID for simplicity
-
-# Create the specific session where the conversation will happen
-session = session_service.create_session(
-    app_name=APP_NAME,
-    user_id=USER_ID,
-    session_id=SESSION_ID
-)
-print(f"Session created: App='{APP_NAME}', User='{USER_ID}', Session='{SESSION_ID}'")
-
-# --- Runner ---
-# Key Concept: Runner orchestrates the agent execution loop.
-runner = Runner(
-    agent=root_agent, # The agent we want to run
-    app_name=APP_NAME,   # Associates runs with our app
-    session_service=session_service # Uses our session manager
-)
 
 class WeatherTimeAgent:
-    def __init__(self, runner: Runner, session: InMemorySessionService, 
-                 app_name: str = APP_NAME, user_id: str = USER_ID,
-                 session_id: str = SESSION_ID):
+    def __init__(self, runner: Runner, session: InMemorySessionService, app_name, user_id, session_id):
         self.app_name = app_name
         self.user_id = user_id
         self.session_id = session_id
@@ -118,7 +84,7 @@ class WeatherTimeAgent:
         # Key Concept: run_async executes the agent logic and yields Events.
         # We iterate through events to find the final answer.
         async for event in self.runner.run_async(
-            user_id=USER_ID, session_id=SESSION_ID, new_message=content
+            user_id=self.user_id, session_id=self.session_id, new_message=content
         ):
             # Uncomment the line below to see *all* events during execution
             # print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
@@ -134,9 +100,48 @@ class WeatherTimeAgent:
                 break  # Stop processing events once the final response is found
 
         print(f"<<< Agent Response: {final_response_text}")
+        return final_response_text
 
 
 #initiate the agent
-async def initialize_agent():
-    agent = WeatherTimeAgent(runner=runner, session=session)
+async def initialize_agent(user_id):
+
+    settings = get_settings()
+    os.environ["GOOGLE_API_KEY"] = settings.GOOGLE_API_KEY  # <--- REPLACE
+
+    root_agent = Agent(
+    name="weather_time_agent",
+    model="gemini-2.0-flash",
+    description=(
+        "Agent to answer questions about the time and weather in a city."
+    ),
+    instruction=(
+        "You are a helpful agent who can answer user questions about the time and weather in a city."
+    ),
+    tools=[get_weather, get_current_time],
+)
+
+    session_service = InMemorySessionService()
+
+    # Define constants for identifying the interaction context
+    APP_NAME = "weather_tutorial_app"
+    USER_ID = user_id
+    SESSION_ID = "session_001" # Using a fixed ID for simplicity
+
+    # Create the specific session where the conversation will happen
+    session = session_service.create_session(
+        app_name=APP_NAME,
+        user_id=USER_ID,
+        session_id=SESSION_ID
+    )
+    print(f"Session created: App='{APP_NAME}', User='{USER_ID}', Session='{SESSION_ID}'")
+
+    # --- Runner ---
+    # Key Concept: Runner orchestrates the agent execution loop.
+    runner = Runner(
+        agent=root_agent, # The agent we want to run
+        app_name=APP_NAME,   # Associates runs with our app
+        session_service=session_service # Uses our session manager
+    )
+    agent = WeatherTimeAgent(runner=runner, session=session, app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID)
     return agent
