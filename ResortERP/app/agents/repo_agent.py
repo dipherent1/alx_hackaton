@@ -2,6 +2,7 @@ from . import Agent
 from app.repo.base import ResortManager
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID
+from app.config.db import get_db
 
 class RoomSchema(BaseModel):
     id: UUID
@@ -10,7 +11,15 @@ class RoomSchema(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-resortManager = ResortManager()
+def getResortManager():
+    """
+    Function to get an instance of ResortManager with a properly managed database session.
+
+    Returns:
+        ResortManager: An instance of ResortManager.
+    """
+    db = get_db()
+    return ResortManager(db)
 
 def getAvailableRooms():
     """
@@ -22,6 +31,7 @@ def getAvailableRooms():
     Returns:
         list: A list of available rooms, each represented as a dictionary.
     """
+    resortManager = getResortManager()
     rooms = resortManager.get_available_rooms()
     return [RoomSchema.model_validate(room).model_dump() for room in rooms]
 
@@ -36,6 +46,7 @@ def getUserBookings(user_id: UUID):
     Returns:
         list: A list of user bookings, each represented as a dictionary.
     """
+    resortManager = getResortManager()
     bookings = resortManager.get_user_bookings(user_id)
     return [RoomSchema.model_validate(booking).model_dump() for booking in bookings]
 
@@ -51,6 +62,7 @@ def bookRoom(user_id: UUID, room_id: UUID):
     Returns:
         dict: A dictionary containing either an error message or a booking URI.
     """
+    resortManager = getResortManager()
     if resortManager.is_room_booked(room_id):
         return {"error": "Room is already booked."}
     
