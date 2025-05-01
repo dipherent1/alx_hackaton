@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from app.agents.agent import initialize_agent
+from ResortERP.app.agents.root_agent import initialize_agent
 from pydantic import BaseModel
 chat_router = APIRouter()
 CHATSESSION = None

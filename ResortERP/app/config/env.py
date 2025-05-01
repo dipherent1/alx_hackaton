@@ -4,6 +4,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
 
     GOOGLE_API_KEY: str
+    DB_CONNECTION_URI: str
 
     
 
