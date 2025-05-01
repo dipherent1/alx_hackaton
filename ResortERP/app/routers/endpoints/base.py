@@ -75,7 +75,7 @@ async def get_available_rooms_endpoint(
 
 # --- Update ALL other endpoints similarly ---
 # Example: Book a room (assuming you have endpoint parameters for user_id, room_id)
-@base_router.post("/booking/user/{user_id}/room/{room_id}", response_model=BookingSchema) # Assuming BookingSchema exists
+@base_router.post("/booking/user/{user_id}/room/{room_id}") # Assuming BookingSchema exists
 async def book_room_endpoint(
     user_id: UUID,
     room_id: UUID,
