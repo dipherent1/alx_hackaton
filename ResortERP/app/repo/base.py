@@ -78,3 +78,13 @@ class ResortManager:
     def get_user_bookings(self, user_id: uuid.UUID):
         bookings = self.db.query(Booking).filter(Booking.user_id == user_id).all()
         return bookings
+    
+    # Get all available rooms
+    def get_available_rooms(self):
+        available_rooms = self.db.query(Room).filter(Room.is_booked == False).all()
+        return available_rooms
+    
+    # Is room booked
+    def is_room_booked(self, room_id: uuid.UUID):
+        room = self.db.query(Room).filter(Room.id == room_id).first()
+        return room.is_booked if room else None

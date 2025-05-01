@@ -1,6 +1,8 @@
 from .env import get_settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+
 DB_CONNECTION_URI = get_settings().DB_CONNECTION_URI
 
 # Create the database engine

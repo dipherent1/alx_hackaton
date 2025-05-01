@@ -8,6 +8,7 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.runners import Runner
 from google.genai import types # For creating message Content/Parts
 from app.config.env import get_settings
+from .repo_agent import getRepoAgent
 
 
 
@@ -105,10 +106,12 @@ class WeatherTimeAgent:
 
 #initiate the agent
 async def initialize_agent(user_id):
+    
 
     settings = get_settings()
     os.environ["GOOGLE_API_KEY"] = settings.GOOGLE_API_KEY  # <--- REPLACE
 
+    repoAgent = getRepoAgent()
     root_agent = Agent(
     name="weather_time_agent",
     model="gemini-2.0-flash",
@@ -119,6 +122,7 @@ async def initialize_agent(user_id):
         "You are a helpful agent who can answer user questions about the time and weather in a city."
     ),
     tools=[get_weather, get_current_time],
+    sub_agents=[repoAgent],  # Add the repo agent as a sub-agent
 )
 
     session_service = InMemorySessionService()
