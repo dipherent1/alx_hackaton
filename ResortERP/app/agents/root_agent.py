@@ -9,6 +9,7 @@ from google.adk.runners import Runner
 from google.genai import types # For creating message Content/Parts
 from app.config.env import get_settings
 from .repo_agent import getRepoAgent
+from .rag_agent import getRagAgent
 
 
 
@@ -112,21 +113,24 @@ async def initialize_agent(user_id):
     os.environ["GOOGLE_API_KEY"] = settings.GOOGLE_API_KEY  # <--- REPLACE
 
     repoAgent = getRepoAgent()
+    ragAgent = getRagAgent()
     root_agent = Agent(
         name="weather_time_resort_agent",
         model="gemini-2.0-flash",
         description=(
             "This agent specializes in providing weather updates and current time information for cities. "
-            "Additionally, it includes a sub-agent to handle resort-related tasks such as checking room availability, "
+            "Additionally, it includes a sub-agent to handle resort-related tasks such as checking room availability, and an agent for checking Google Calendar events, and services in the resort. "
             "booking rooms, and retrieving user booking details."
         ),
         instruction=(
             "You are a specialized agent designed to assist users with weather and time-related queries for cities. "
             "You also have a sub-agent capable of managing resort bookings, including checking available rooms, "
             "booking rooms, and retrieving user booking information. Always provide clear and concise responses."
+            "You also have a sub-agent called ragAgent that can access the resort Google Calendar events and services. "
+            ""
         ),
         tools=[get_weather, get_current_time],
-        sub_agents=[repoAgent],  # Integrates the resort management sub-agent
+        sub_agents=[repoAgent, ragAgent],  # Integrates the resort management sub-agent
     )
 
     session_service = InMemorySessionService()
