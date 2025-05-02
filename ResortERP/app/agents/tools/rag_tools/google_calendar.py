@@ -15,14 +15,17 @@ from googleapiclient.errors import HttpError
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
 # --- Calculate paths relative to THIS file ---
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) # Directory containing this .py file
-TOKEN_PATH = os.path.join(SCRIPT_DIR, "token.json")     # Full path to token.json
-CREDS_PATH = os.path.join(SCRIPT_DIR, "credentials.json") # Full path to credentials.json
-
+TOKEN_PATH = "app/agents/tools/rag_tools/token.json"
+CREDS_PATH = "app/agents/tools/rag_tools/credentials.json"
 # Add a print statement for debugging (optional, remove later)
 print(f"[Calendar Tools] Using Token Path: {TOKEN_PATH}")
 print(f"[Calendar Tools] Using Creds Path: {CREDS_PATH}")
 
+
+if not os.path.exists(TOKEN_PATH):
+    print(f"ERROR: Token path does not exist: {TOKEN_PATH}")
+if not os.path.exists(CREDS_PATH):
+    print(f"ERROR: Credentials path does not exist: {CREDS_PATH}")
 
 def _get_calendar_credentials() -> Optional[Credentials]:
     """
