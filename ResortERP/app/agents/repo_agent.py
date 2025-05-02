@@ -2,8 +2,7 @@ from . import Agent
 from app.repo.base import ResortManager
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID
-from app.config.db import get_db
-
+from app.repo.base import getResortManager
 class RoomSchema(BaseModel):
     id: UUID
     number: str
@@ -11,21 +10,11 @@ class RoomSchema(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-def getResortManager():
-    """
-    Function to get an instance of ResortManager with a properly managed database session.
-
-    Returns:
-        ResortManager: An instance of ResortManager.
-    """
-    db = get_db()
-    return ResortManager(db)
-
 def getAvailableRooms():
     """
     Function to get available rooms from the database and return them 
     as a JSON serializable list using a Pydantic model.
-
+    
     Args:
         None
     Returns:
