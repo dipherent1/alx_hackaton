@@ -113,17 +113,21 @@ async def initialize_agent(user_id):
 
     repoAgent = getRepoAgent()
     root_agent = Agent(
-    name="weather_time_agent",
-    model="gemini-2.0-flash",
-    description=(
-        "Agent to answer questions about the time and weather in a city."
-    ),
-    instruction=(
-        "You are a helpful agent who can answer user questions about the time and weather in a city."
-    ),
-    tools=[get_weather, get_current_time],
-    sub_agents=[repoAgent],  # Add the repo agent as a sub-agent
-)
+        name="weather_time_resort_agent",
+        model="gemini-2.0-flash",
+        description=(
+            "This agent specializes in providing weather updates and current time information for cities. "
+            "Additionally, it includes a sub-agent to handle resort-related tasks such as checking room availability, "
+            "booking rooms, and retrieving user booking details."
+        ),
+        instruction=(
+            "You are a specialized agent designed to assist users with weather and time-related queries for cities. "
+            "You also have a sub-agent capable of managing resort bookings, including checking available rooms, "
+            "booking rooms, and retrieving user booking information. Always provide clear and concise responses."
+        ),
+        tools=[get_weather, get_current_time],
+        sub_agents=[repoAgent],  # Integrates the resort management sub-agent
+    )
 
     session_service = InMemorySessionService()
 
